@@ -74,6 +74,33 @@ app.get("/api/auth/messaging", (req, res) => {
   res.redirect(url);
 });
 
+app.post("/api/auth/exchange", async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: "missing code" });
+  try {
+    const { EBAY_CLIENT_ID, EBAY_CLIENT_SECRET } = process.env;
+    const credentials = Buffer.from(`${EBAY_CLIENT_ID}:${EBAY_CLIENT_SECRET}`).toString("base64");
+    const r = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
+      method: "POST",
+      headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: RUNAME }),
+    });
+    const data = await r.json();
+    if (!data.refresh_token) return res.status(400).json({ error: data.error_description || JSON.stringify(data) });
+    process.env.EBAY_REFRESH_TOKEN = data.refresh_token;
+    cachedToken = null;
+    // Persist to .env
+    const { readFileSync, writeFileSync } = await import("fs");
+    const envPath = new URL(".env", import.meta.url).pathname;
+    let envContent = readFileSync(envPath, "utf8");
+    envContent = envContent.replace(/^EBAY_REFRESH_TOKEN=.*$/m, `EBAY_REFRESH_TOKEN="${data.refresh_token}"`);
+    writeFileSync(envPath, envContent);
+    res.json({ success: true, refresh_token: data.refresh_token });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/auth/callback", async (req, res) => {
   const code = req.query.code;
   if (!code) return res.send("❌ 授权失败，未收到 code");

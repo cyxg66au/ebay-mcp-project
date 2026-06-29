@@ -40,12 +40,65 @@ async function ebay(path, options = {}) {
   const token = await getAccessToken();
   const res = await fetch(`https://api.ebay.com${path}`, {
     ...options,
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options.headers },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "Accept-Language": "en-US",
+      ...options.headers,
+    },
   });
   if (res.status === 204) return null;
   const text = await res.text();
+  if (!text) return null;
   return JSON.parse(text);
 }
+
+// ─── OAuth Routes ─────────────────────────────────────────────────────────────
+
+const RUNAME = "Gang_Chen-GangChen-MCPtes-qghrudfc";
+const FULL_SCOPES = [
+  "https://api.ebay.com/oauth/api_scope",
+  "https://api.ebay.com/oauth/api_scope/sell.fulfillment",
+  "https://api.ebay.com/oauth/api_scope/sell.inventory",
+  "https://api.ebay.com/oauth/api_scope/sell.messaging",
+].join(" ");
+
+app.get("/api/auth/messaging", (req, res) => {
+  const url = `https://auth.ebay.com/oauth2/authorize?` + new URLSearchParams({
+    client_id: process.env.EBAY_CLIENT_ID,
+    redirect_uri: RUNAME,
+    response_type: "code",
+    scope: FULL_SCOPES,
+    prompt: "login",
+  });
+  res.redirect(url);
+});
+
+app.get("/api/auth/callback", async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.send("❌ 授权失败，未收到 code");
+  const { EBAY_CLIENT_ID, EBAY_CLIENT_SECRET } = process.env;
+  const credentials = Buffer.from(`${EBAY_CLIENT_ID}:${EBAY_CLIENT_SECRET}`).toString("base64");
+  const r = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
+    method: "POST",
+    headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: RUNAME }),
+  });
+  const data = await r.json();
+  if (data.refresh_token) {
+    process.env.EBAY_REFRESH_TOKEN = data.refresh_token;
+    cachedToken = null; // 清除缓存，强制用新 token
+    res.send(`<html><body style="font-family:sans-serif;padding:40px;text-align:center">
+      <h2>✅ 授权成功！</h2>
+      <p>新 Refresh Token 已更新，消息功能已开启。</p>
+      <p style="font-size:12px;color:#888;margin-top:16px;">新 Token（请更新 .env 文件）：<br>
+      <code style="background:#f0f0f0;padding:4px 8px;border-radius:4px;word-break:break-all">${data.refresh_token}</code></p>
+      <a href="/" style="display:inline-block;margin-top:20px;padding:10px 24px;background:#e53238;color:#fff;border-radius:6px;text-decoration:none">返回后台</a>
+    </body></html>`);
+  } else {
+    res.send(`❌ 获取 Token 失败：${JSON.stringify(data)}`);
+  }
+});
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 
@@ -141,22 +194,22 @@ app.post("/api/orders/:orderId/ship", async (req, res) => {
   }
 });
 
-// 消息列表
+// 消息列表（对话）
 app.get("/api/messages", async (req, res) => {
   try {
     const unread = req.query.unread === "true";
     const filter = unread ? "&filter=readStatus:%7BUNREAD%7D" : "";
-    const data = await ebay(`/sell/messaging/v1/message?limit=20${filter}`);
-    res.json(data);
+    const data = await ebay(`/sell/messaging/v1/conversation?limit=20${filter}`);
+    res.json(data || { conversations: [] });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 // 回复消息
-app.post("/api/messages/:messageId/reply", async (req, res) => {
+app.post("/api/messages/:conversationId/reply", async (req, res) => {
   try {
-    const data = await ebay(`/sell/messaging/v1/message/${req.params.messageId}/reply`, {
+    const data = await ebay(`/sell/messaging/v1/conversation/${req.params.conversationId}/message`, {
       method: "POST",
       body: JSON.stringify({ body: req.body.body }),
     });
@@ -166,12 +219,35 @@ app.post("/api/messages/:messageId/reply", async (req, res) => {
   }
 });
 
-// 库存列表
+// 近期热销商品（从订单中汇总）
 app.get("/api/inventory", async (req, res) => {
   try {
-    const offset = req.query.offset || 0;
-    const data = await ebay(`/sell/inventory/v1/inventory_item?limit=20&offset=${offset}`);
-    res.json(data);
+    const data = await ebay("/sell/fulfillment/v1/order?limit=100");
+    const orders = data.orders || [];
+    const itemMap = {};
+    orders.forEach(o => {
+      o.lineItems?.forEach(item => {
+        const key = item.sku || item.legacyItemId;
+        if (!itemMap[key]) {
+          itemMap[key] = {
+            sku: item.sku || item.legacyItemId,
+            product: { title: item.title },
+            totalSold: 0,
+            totalRevenue: 0,
+            legacyItemId: item.legacyItemId,
+            lastSold: o.creationDate?.split("T")[0],
+          };
+        }
+        itemMap[key].totalSold += item.quantity || 1;
+        itemMap[key].totalRevenue += parseFloat(item.total?.value || 0);
+        if (o.creationDate > (itemMap[key].lastSold || "")) {
+          itemMap[key].lastSold = o.creationDate?.split("T")[0];
+        }
+      });
+    });
+    const inventoryItems = Object.values(itemMap)
+      .sort((a, b) => b.totalSold - a.totalSold);
+    res.json({ inventoryItems, total: inventoryItems.length, note: "基于最近100笔订单统计" });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -254,7 +254,7 @@ async function loadMessages() {
     const r = await fetch(API + `/api/messages?unread=${unread}`);
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    renderMessages(data.messages || []);
+    renderMessages(data.conversations || data.messages || []);
   } catch(e) {
     document.getElementById('messages-content').innerHTML = `<div class="error-msg">❌ ${e.message}</div>`;
   }
@@ -262,17 +262,27 @@ async function loadMessages() {
 
 function renderMessages(messages) {
   if (!messages.length) {
-    document.getElementById('messages-content').innerHTML = '<div class="loading">暂无消息</div>';
+    document.getElementById('messages-content').innerHTML = `
+      <div style="text-align:center;padding:32px;color:#888;">
+        <div style="font-size:32px;margin-bottom:12px;">💬</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px;">暂无消息</div>
+        <div style="font-size:12px;color:#aaa;">消息功能需要额外授权，请点击下方按钮重新授权</div>
+        <a href="/api/auth/messaging" style="display:inline-block;margin-top:14px;padding:8px 20px;background:#e53238;color:#fff;border-radius:6px;font-size:13px;text-decoration:none;">🔑 授权消息权限</a>
+      </div>`;
     return;
   }
   const rows = messages.map(m => {
-    const unread = m.readStatus === 'UNREAD';
+    const unread = m.unreadMessageCount > 0;
+    const buyer = m.contactUserName || m.buyerUserName || '-';
+    const subject = m.subject || m.latestMessage?.text || '-';
+    const date = (m.modifiedDate || m.creationDate || '').split('T')[0];
+    const id = m.conversationId || m.messageId;
     return `<tr style="${unread ? 'font-weight:600;' : ''}">
       <td>${unread ? '🔵' : '　'}</td>
-      <td style="font-size:12px;color:#888;">${m.creationDate?.split('T')[0] || '-'}</td>
-      <td>${m.sender?.username || '-'}</td>
-      <td class="msg-body" title="${(m.body||'').replace(/"/g,'&quot;')}">${m.subject || m.body || '-'}</td>
-      <td><button class="btn btn-secondary" onclick="openReplyModal('${m.messageId}', '${(m.body||'').replace(/'/g,"\\'")}')">回复</button></td>
+      <td style="font-size:12px;color:#888;">${date}</td>
+      <td>${buyer}</td>
+      <td class="msg-body" title="${subject.replace(/"/g,'&quot;')}">${subject}</td>
+      <td><button class="btn btn-secondary" onclick="openReplyModal('${id}', '${subject.replace(/'/g,"\\'")}')">回复</button></td>
     </tr>`;
   }).join('');
   document.getElementById('messages-content').innerHTML = `
@@ -315,35 +325,31 @@ async function loadInventory() {
     const r = await fetch(API + '/api/inventory');
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    renderInventory(data.inventoryItems || []);
+    renderInventory(data.inventoryItems || [], data.note);
   } catch(e) {
     document.getElementById('inventory-content').innerHTML = `<div class="error-msg">❌ ${e.message}</div>`;
   }
 }
 
-function renderInventory(items) {
+function renderInventory(items, note) {
   if (!items.length) {
-    document.getElementById('inventory-content').innerHTML = '<div class="loading">暂无库存数据</div>';
+    document.getElementById('inventory-content').innerHTML = '<div class="loading">暂无数据</div>';
     return;
   }
-  const rows = items.map(item => {
-    const qty = item.availability?.shipToLocationAvailability?.quantity ?? '-';
-    const low = typeof qty === 'number' && qty <= 3;
+  const rows = items.map((item, i) => {
     return `<tr>
-      <td style="font-family:monospace;font-size:12px;">${item.sku}</td>
+      <td style="color:#aaa;font-size:12px;text-align:center;">${i+1}</td>
+      <td style="font-family:monospace;font-size:12px;color:#888;">${item.sku || '-'}</td>
       <td class="title-cell" title="${item.product?.title||''}">${item.product?.title || '-'}</td>
-      <td>
-        <span class="badge ${low ? 'badge-warn' : 'badge-ok'}">${qty}</span>
-      </td>
-      <td>
-        <input type="number" min="0" style="width:60px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;" value="${qty}" id="qty-${item.sku.replace(/[^a-z0-9]/gi,'_')}">
-        <button class="btn btn-secondary" style="margin-left:4px;" onclick="updateQty('${item.sku}', '${item.sku.replace(/[^a-z0-9]/gi,'_')}')">更新</button>
-      </td>
+      <td style="text-align:center;font-weight:700;">${item.totalSold}</td>
+      <td style="text-align:right;color:#10b981;font-weight:600;">AUD ${item.totalRevenue?.toFixed(2)}</td>
+      <td style="font-size:12px;color:#aaa;">${item.lastSold || '-'}</td>
     </tr>`;
   }).join('');
   document.getElementById('inventory-content').innerHTML = `
+    <div style="font-size:12px;color:#888;margin-bottom:12px;">📦 ${note || '近期销售商品排行（按订单汇总）'}</div>
     <table>
-      <thead><tr><th>SKU</th><th>商品名称</th><th>库存</th><th>修改库存</th></tr></thead>
+      <thead><tr><th>#</th><th>SKU</th><th>商品名称</th><th style="text-align:center">销量</th><th style="text-align:right">销售额</th><th>最近售出</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }

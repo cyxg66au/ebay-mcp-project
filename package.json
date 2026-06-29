@@ -1,0 +1,15 @@
+{
+  "name": "ebay-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP server exposing eBay seller APIs as tools for AI assistants",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.13.0",
+    "dotenv": "^16.4.7"
+  }
+}

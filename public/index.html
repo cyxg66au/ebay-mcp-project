@@ -54,6 +54,9 @@
   .form-group textarea { min-height: 80px; resize: vertical; }
   .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 
+  .period-btn { padding: 5px 14px; border-radius: 16px; border: 1px solid #ddd; background: #f5f5f5; color: #555; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .period-btn:hover { background: #ffe8e8; border-color: #e53238; color: #e53238; }
+  .period-btn.active { background: #e53238; border-color: #e53238; color: #fff; }
   .loading { text-align: center; padding: 40px; color: #aaa; font-size: 14px; }
   .error-msg { color: #e53238; font-size: 13px; padding: 12px; background: #fff5f5; border-radius: 6px; }
   .success-msg { color: #065f46; font-size: 13px; padding: 12px; background: #d1fae5; border-radius: 6px; margin-bottom: 12px; }
@@ -89,6 +92,13 @@
 
 <!-- 库存 -->
 <div id="tab-inventory" class="panel">
+  <div style="margin-bottom:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <span style="font-size:12px;color:#888;">统计时间段：</span>
+    <button class="period-btn active" onclick="setInventoryPeriod(0, this)">近100笔</button>
+    <button class="period-btn" onclick="setInventoryPeriod(7, this)">近一周</button>
+    <button class="period-btn" onclick="setInventoryPeriod(30, this)">近一个月</button>
+    <button class="period-btn" onclick="setInventoryPeriod(90, this)">近三个月</button>
+  </div>
   <div id="inventory-content"><div class="loading">加载中...</div></div>
 </div>
 
@@ -332,10 +342,20 @@ async function confirmReply() {
 
 // ── 库存 ────────────────────────────────────────────────────────────────────
 
+let currentInventoryDays = 0;
+
+function setInventoryPeriod(days, btn) {
+  currentInventoryDays = days;
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadInventory();
+}
+
 async function loadInventory() {
   document.getElementById('inventory-content').innerHTML = '<div class="loading">加载中...</div>';
   try {
-    const r = await fetch(API + '/api/inventory');
+    const params = currentInventoryDays > 0 ? `?days=${currentInventoryDays}` : '';
+    const r = await fetch(API + '/api/inventory' + params);
     const data = await r.json();
     if (data.error) throw new Error(data.error);
     renderInventory(data.inventoryItems || [], data.note);

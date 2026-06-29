@@ -249,8 +249,10 @@ app.post("/api/messages/:conversationId/reply", async (req, res) => {
 // 近期热销商品（从订单中汇总）
 app.get("/api/inventory", async (req, res) => {
   try {
+    const days = parseInt(req.query.days) || 0;
+    const cutoff = days > 0 ? new Date(Date.now() - days * 86400000).toISOString() : null;
     const data = await ebay("/sell/fulfillment/v1/order?limit=100");
-    const orders = data.orders || [];
+    const orders = (data.orders || []).filter(o => !cutoff || o.creationDate >= cutoff);
     const itemMap = {};
     orders.forEach(o => {
       o.lineItems?.forEach(item => {
@@ -274,7 +276,8 @@ app.get("/api/inventory", async (req, res) => {
     });
     const inventoryItems = Object.values(itemMap)
       .sort((a, b) => b.totalSold - a.totalSold);
-    res.json({ inventoryItems, total: inventoryItems.length, note: "基于最近100笔订单统计" });
+    const label = days === 7 ? "近一周" : days === 30 ? "近一个月" : days === 90 ? "近三个月" : "近100笔订单";
+    res.json({ inventoryItems, total: inventoryItems.length, note: `基于${label}销售数据统计（共${orders.length}笔订单）` });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

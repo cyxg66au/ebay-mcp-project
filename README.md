@@ -57,6 +57,6 @@ Connect this server to any MCP-compatible client (e.g., Claude Desktop) by addin
 }
 ```
 
-## Liscense
+## License
 
 MIT

@@ -278,7 +278,7 @@ app.get("/api/inventory", async (req, res) => {
       .sort((a, b) => b.totalSold - a.totalSold);
     const label = days === 7 ? "近一周" : days === 30 ? "近一个月" : days === 90 ? "近三个月" : "近100笔订单";
     const totalRevenue = inventoryItems.reduce((s, i) => s + i.totalRevenue, 0).toFixed(2);
-    res.json({ inventoryItems, total: inventoryItems.length, totalRevenue, note: `基于${label}销售数据统计（共${orders.length}笔订单，共计：AUD ${totalRevenue}）` });
+    res.json({ inventoryItems, total: inventoryItems.length, totalRevenue, orderCount: orders.length, label });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
